@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 
-// Generates all months from January 2010 to December 2030
+// Generates all months from January 2010 to December 2050
 const generateMonthOptions = () => {
   const months = [
     'January', 'February', 'March', 'April', 'May', 'June',
@@ -8,7 +8,7 @@ const generateMonthOptions = () => {
   ];
   const options = [];
 
-  for (let year = 2010; year <= 2030; year++) {
+  for (let year = 2010; year <= 2050; year++) {
     for (const month of months) {
       options.push(`${month} ${year}`);
     }
@@ -20,23 +20,18 @@ const ALL_MONTHS = generateMonthOptions();
 const CURRENT_MONTH = 'August 2026';
 
 export default function App() {
-  // Default target rent initialized to 0
   const [defaultRent, setDefaultRent] = useState(0);
 
-  // Initializing units state with 0 target rent and 0 paid amounts
+  // Base unit structure with isolated monthly histories
   const [units, setUnits] = useState(() => {
-    const saved = localStorage.getItem('rental_units_history_v6');
+    const saved = localStorage.getItem('rental_units_history_v8');
     if (saved) return JSON.parse(saved);
 
     return Array.from({ length: 11 }, (_, i) => ({
       id: i + 1,
       houseNo: `House ${i + 1}`,
       tenantName: `Tenant ${i + 1}`,
-      monthlyRent: 0,
-      history: [
-        { month: 'July 2026', amountPaid: 0, datePaid: '', balance: 0 },
-        { month: 'August 2026', amountPaid: 0, datePaid: '', balance: 0 }
-      ]
+      history: []
     }));
   });
 
@@ -44,22 +39,24 @@ export default function App() {
   const [editingUnit, setEditingUnit] = useState(null);
   const [receiptUnit, setReceiptUnit] = useState(null);
 
-  // Form inputs default to 0 and empty date
+  const [monthlyRentInput, setMonthlyRentInput] = useState(0);
   const [payAmount, setPayAmount] = useState(0);
   const [payDate, setPayDate] = useState('');
 
   useEffect(() => {
-    localStorage.setItem('rental_units_history_v6', JSON.stringify(units));
+    localStorage.setItem('rental_units_history_v8', JSON.stringify(units));
   }, [units]);
 
+  // Retrieve monthly history record strictly for the chosen period
   const getMonthRecord = (unit, month) => {
     const record = unit.history.find(h => h.month === month);
-    return record || { month, amountPaid: 0, datePaid: '', balance: unit.monthlyRent };
+    return record || { month, monthlyRent: 0, amountPaid: 0, datePaid: '', balance: 0 };
   };
 
   const handleOpenEdit = (unit) => {
     const currentRecord = getMonthRecord(unit, selectedMonth);
     setEditingUnit({ ...unit });
+    setMonthlyRentInput(currentRecord.monthlyRent || 0);
     setPayAmount(currentRecord.amountPaid || 0);
     setPayDate(currentRecord.datePaid || new Date().toISOString().split('T')[0]);
   };
@@ -67,15 +64,17 @@ export default function App() {
   const handleSavePayment = (e) => {
     e.preventDefault();
     const paid = Number(payAmount);
-    const rentTarget = Number(editingUnit.monthlyRent);
+    const rentTarget = Number(monthlyRentInput);
 
     setUnits(units.map(u => {
       if (u.id !== editingUnit.id) return u;
 
       const newHistory = [...u.history];
       const existingIndex = newHistory.findIndex(h => h.month === selectedMonth);
+
       const newRecord = {
         month: selectedMonth,
+        monthlyRent: rentTarget,
         amountPaid: paid,
         datePaid: payDate,
         balance: rentTarget - paid
@@ -91,7 +90,6 @@ export default function App() {
         ...u,
         houseNo: editingUnit.houseNo,
         tenantName: editingUnit.tenantName,
-        monthlyRent: rentTarget,
         history: newHistory
       };
     }));
@@ -99,7 +97,6 @@ export default function App() {
     setEditingUnit(null);
   };
 
-  // Dynamically add a house defaulting rent to 0
   const handleAddHouse = () => {
     const newCount = units.length + 1;
     const rentVal = Number(defaultRent) || 0;
@@ -108,9 +105,8 @@ export default function App() {
       id: Date.now(),
       houseNo: `House ${newCount}`,
       tenantName: `Tenant ${newCount}`,
-      monthlyRent: rentVal,
       history: [
-        { month: selectedMonth, amountPaid: 0, datePaid: '', balance: rentVal }
+        { month: selectedMonth, monthlyRent: rentVal, amountPaid: 0, datePaid: '', balance: rentVal }
       ]
     };
     setUnits([...units, newUnit]);
@@ -122,7 +118,7 @@ export default function App() {
     }
   };
 
-  const totalExpected = units.reduce((acc, u) => acc + u.monthlyRent, 0);
+  const totalExpected = units.reduce((acc, u) => acc + getMonthRecord(u, selectedMonth).monthlyRent, 0);
   const totalCollected = units.reduce((acc, u) => acc + getMonthRecord(u, selectedMonth).amountPaid, 0);
   const totalBalance = totalExpected - totalCollected;
 
@@ -130,15 +126,15 @@ export default function App() {
     <div className="app-container">
       <div className={receiptUnit ? "no-print" : ""}>
 
-        {/* Header Toolbar */}
+        {/* Header Bar */}
         <header className="app-header">
           <div>
             <h1 className="header-title">Rental Income Ledger</h1>
-            <p className="header-subtitle">Managing {units.length} Properties | Global CSS</p>
+            <p className="header-subtitle">Managing {units.length} Properties | Period: 2010 to 2050</p>
           </div>
 
           <div className="toolbar no-print">
-            {/* Period Dropdown Selector */}
+            {/* Period Dropdown Selector (2010 - 2050) */}
             <div className="period-picker">
               <label>Period:</label>
               <select value={selectedMonth} onChange={(e) => setSelectedMonth(e.target.value)}>
@@ -150,7 +146,7 @@ export default function App() {
               </select>
             </div>
 
-            {/* Default Rent Control set to 0 */}
+            {/* Default Rent Picker */}
             <div className="default-rent-picker">
               <label>Default Rent:</label>
               <input
@@ -199,13 +195,13 @@ export default function App() {
             <tbody>
               {units.map((unit) => {
                 const record = getMonthRecord(unit, selectedMonth);
-                const balance = unit.monthlyRent - record.amountPaid;
+                const balance = record.monthlyRent - record.amountPaid;
 
                 return (
                   <tr key={unit.id}>
                     <td><strong className="text-gold">{unit.houseNo}</strong></td>
                     <td>{unit.tenantName}</td>
-                    <td>KES {unit.monthlyRent.toLocaleString()}</td>
+                    <td>KES {record.monthlyRent.toLocaleString()}</td>
                     <td className="text-emerald" style={{ fontWeight: 600 }}>KES {record.amountPaid.toLocaleString()}</td>
                     <td className={balance > 0 ? 'text-red' : ''} style={{ fontWeight: 700 }}>
                       KES {balance.toLocaleString()}
@@ -226,7 +222,7 @@ export default function App() {
         </div>
       </div>
 
-      {/* Record & Edit Modal */}
+      {/* Record Modal */}
       {editingUnit && (
         <div className="modal-overlay no-print">
           <div className="modal-card">
@@ -253,11 +249,11 @@ export default function App() {
                 />
               </div>
               <div className="form-group">
-                <label>Monthly Rent Target (KES)</label>
+                <label>Monthly Rent Target for {selectedMonth} (KES)</label>
                 <input
                   type="number"
-                  value={editingUnit.monthlyRent}
-                  onChange={(e) => setEditingUnit({ ...editingUnit, monthlyRent: e.target.value })}
+                  value={monthlyRentInput}
+                  onChange={(e) => setMonthlyRentInput(e.target.value)}
                   required
                 />
               </div>
@@ -313,7 +309,7 @@ export default function App() {
               </div>
               <div className="receipt-row receipt-row border-top">
                 <span>Monthly Rent Target:</span>
-                <span>KES {receiptUnit.unit.monthlyRent.toLocaleString()}</span>
+                <span>KES {receiptUnit.record.monthlyRent.toLocaleString()}</span>
               </div>
               <div className="receipt-row">
                 <span>Amount Paid:</span>
