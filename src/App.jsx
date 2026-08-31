@@ -22,9 +22,8 @@ const CURRENT_MONTH = 'August 2026';
 export default function App() {
   const [defaultRent, setDefaultRent] = useState(0);
 
-  // Base unit structure with isolated monthly histories
   const [units, setUnits] = useState(() => {
-    const saved = localStorage.getItem('rental_units_history_v8');
+    const saved = localStorage.getItem('rental_units_history_v9');
     if (saved) return JSON.parse(saved);
 
     return Array.from({ length: 11 }, (_, i) => ({
@@ -44,19 +43,48 @@ export default function App() {
   const [payDate, setPayDate] = useState('');
 
   useEffect(() => {
-    localStorage.setItem('rental_units_history_v8', JSON.stringify(units));
+    localStorage.setItem('rental_units_history_v9', JSON.stringify(units));
   }, [units]);
 
-  // Retrieve monthly history record strictly for the chosen period
+  // Gets the index of the month prior to the current selection
+  const getPreviousMonthIndex = (currentMonthStr) => {
+    const index = ALL_MONTHS.indexOf(currentMonthStr);
+    return index > 0 ? ALL_MONTHS[index - 1] : null;
+  };
+
+  // Calculates record for the selected month, automatically pulling arrears from previous month
   const getMonthRecord = (unit, month) => {
-    const record = unit.history.find(h => h.month === month);
-    return record || { month, monthlyRent: 0, amountPaid: 0, datePaid: '', balance: 0 };
+    const existingRecord = unit.history.find(h => h.month === month);
+    if (existingRecord) return existingRecord;
+
+    // Check previous month for defaulted balances
+    const prevMonthStr = getPreviousMonthIndex(month);
+    let previousArrears = 0;
+
+    if (prevMonthStr) {
+      const prevRecord = unit.history.find(h => h.month === prevMonthStr);
+      if (prevRecord && prevRecord.balance > 0) {
+        previousArrears = prevRecord.balance;
+      }
+    }
+
+    // Default target rent is the base default rent + defaulted arrears from previous month
+    const calculatedTarget = Number(defaultRent) + previousArrears;
+
+    return {
+      month,
+      monthlyRent: calculatedTarget,
+      amountPaid: 0,
+      datePaid: '',
+      balance: calculatedTarget,
+      arrearsCarriedOver: previousArrears
+    };
   };
 
   const handleOpenEdit = (unit) => {
     const currentRecord = getMonthRecord(unit, selectedMonth);
     setEditingUnit({ ...unit });
-    setMonthlyRentInput(currentRecord.monthlyRent || 0);
+    setMonthlyRentInput(currentRecord.monthlyRent);
     setPayAmount(currentRecord.amountPaid || 0);
     setPayDate(currentRecord.datePaid || new Date().toISOString().split('T')[0]);
   };
@@ -130,11 +158,10 @@ export default function App() {
         <header className="app-header">
           <div>
             <h1 className="header-title">Rental Income Ledger</h1>
-            <p className="header-subtitle">Managing {units.length} Properties | Period: 2010 to 2050</p>
+            <p className="header-subtitle">Managing {units.length} Properties | Auto-Carryover Defaultors</p>
           </div>
 
           <div className="toolbar no-print">
-            {/* Period Dropdown Selector (2010 - 2050) */}
             <div className="period-picker">
               <label>Period:</label>
               <select value={selectedMonth} onChange={(e) => setSelectedMonth(e.target.value)}>
@@ -146,7 +173,6 @@ export default function App() {
               </select>
             </div>
 
-            {/* Default Rent Picker */}
             <div className="default-rent-picker">
               <label>Default Rent:</label>
               <input
@@ -162,7 +188,7 @@ export default function App() {
           </div>
         </header>
 
-        {/* Financial Overview Cards */}
+        {/* Financial Cards */}
         <div className="summary-grid">
           <div className="summary-card">
             <span className="summary-label">Target ({selectedMonth})</span>
@@ -178,14 +204,14 @@ export default function App() {
           </div>
         </div>
 
-        {/* Ledger Table */}
+        {/* Table View */}
         <div className="table-card">
           <table className="ledger-table">
             <thead>
               <tr>
                 <th>House No</th>
                 <th>Tenant Name</th>
-                <th>Monthly Rent</th>
+                <th>Target Rent (inc. Arrears)</th>
                 <th>Amount Paid</th>
                 <th>Balance</th>
                 <th>Date Paid</th>
@@ -201,7 +227,14 @@ export default function App() {
                   <tr key={unit.id}>
                     <td><strong className="text-gold">{unit.houseNo}</strong></td>
                     <td>{unit.tenantName}</td>
-                    <td>KES {record.monthlyRent.toLocaleString()}</td>
+                    <td>
+                      KES {record.monthlyRent.toLocaleString()}
+                      {record.arrearsCarriedOver > 0 && (
+                        <span style={{ display: 'block', fontSize: '0.7rem', color: 'var(--accent-red)' }}>
+                          (+KES {record.arrearsCarriedOver.toLocaleString()} default from prev month)
+                        </span>
+                      )}
+                    </td>
                     <td className="text-emerald" style={{ fontWeight: 600 }}>KES {record.amountPaid.toLocaleString()}</td>
                     <td className={balance > 0 ? 'text-red' : ''} style={{ fontWeight: 700 }}>
                       KES {balance.toLocaleString()}
@@ -222,7 +255,7 @@ export default function App() {
         </div>
       </div>
 
-      {/* Record Modal */}
+      {/* Edit Form Modal */}
       {editingUnit && (
         <div className="modal-overlay no-print">
           <div className="modal-card">
@@ -249,7 +282,7 @@ export default function App() {
                 />
               </div>
               <div className="form-group">
-                <label>Monthly Rent Target for {selectedMonth} (KES)</label>
+                <label>Monthly Target (KES)</label>
                 <input
                   type="number"
                   value={monthlyRentInput}
@@ -308,7 +341,7 @@ export default function App() {
                 <strong>{receiptUnit.unit.tenantName}</strong>
               </div>
               <div className="receipt-row receipt-row border-top">
-                <span>Monthly Rent Target:</span>
+                <span>Total Target Due:</span>
                 <span>KES {receiptUnit.record.monthlyRent.toLocaleString()}</span>
               </div>
               <div className="receipt-row">
@@ -324,7 +357,7 @@ export default function App() {
             </div>
 
             <p style={{ textAlign: 'center', fontSize: '0.75rem', color: '#64748b', borderTop: '1px dashed #cbd5e1', paddingTop: '1rem' }}>
-              Thank you for your prompt payment!
+              Thank you for your payment!
             </p>
 
             <div className="no-print" style={{ display: 'flex', justifyContent: 'space-between', marginTop: '1.5rem' }}>
