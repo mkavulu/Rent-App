@@ -24,6 +24,7 @@ const CURRENT_MONTH = 'August 2026';
 export default function App() {
   const [defaultRent, setDefaultRent] = useState(0);
   const [units, setUnits] = useState([]);
+  const [globalExpenses, setGlobalExpenses] = useState([]);
 
   const [selectedMonth, setSelectedMonth] = useState(CURRENT_MONTH);
   const [editingUnit, setEditingUnit] = useState(null);
@@ -33,14 +34,20 @@ export default function App() {
   const [payAmount, setPayAmount] = useState(0);
   const [payDate, setPayDate] = useState('');
 
-  // 1. Listen for LIVE updates from Firebase Firestore
+  // Global Expense Form State
+  const [expCategory, setExpCategory] = useState('Electricity');
+  const [expAmount, setExpAmount] = useState('');
+  const [expDate, setExpDate] = useState(new Date().toISOString().split('T')[0]);
+  const [expNotes, setExpNotes] = useState('');
+
+  // 1. Listen for LIVE updates from Firebase Firestore for units and expenses
   useEffect(() => {
-    const docRef = doc(db, 'rental_data', 'current_ledger');
-    const unsubscribe = onSnapshot(docRef, (docSnap) => {
+    // Listen to units
+    const unitsRef = doc(db, 'rental_data', 'current_ledger');
+    const unsubscribeUnits = onSnapshot(unitsRef, (docSnap) => {
       if (docSnap.exists()) {
         setUnits(docSnap.data().units || []);
       } else {
-        // Initialize default units in Firestore if document doesn't exist yet
         const defaultUnits = Array.from({ length: 11 }, (_, i) => ({
           id: i + 1,
           houseNo: `House ${i + 1}`,
@@ -51,27 +58,44 @@ export default function App() {
       }
     });
 
-    return () => unsubscribe(); // Cleanup listener on unmount
+    // Listen to global expenses
+    const expensesRef = doc(db, 'rental_data', 'global_expenses');
+    const unsubscribeExpenses = onSnapshot(expensesRef, (docSnap) => {
+      if (docSnap.exists()) {
+        setGlobalExpenses(docSnap.data().expenses || []);
+      } else {
+        saveExpensesToCloud([]);
+      }
+    });
+
+    return () => {
+      unsubscribeUnits();
+      unsubscribeExpenses();
+    };
   }, []);
 
-  // 2. Helper to save updates directly to Firebase Firestore
+  // Helpers to save updates to Firestore
   const saveUnitsToCloud = async (newUnits) => {
     setUnits(newUnits);
     await setDoc(doc(db, 'rental_data', 'current_ledger'), { units: newUnits });
   };
 
-  // Gets the index of the month prior to the current selection
+  const saveExpensesToCloud = async (newExpenses) => {
+    setGlobalExpenses(newExpenses);
+    await setDoc(doc(db, 'rental_data', 'global_expenses'), { expenses: newExpenses });
+  };
+
+  // Helper for previous month lookup
   const getPreviousMonthIndex = (currentMonthStr) => {
     const index = ALL_MONTHS.indexOf(currentMonthStr);
     return index > 0 ? ALL_MONTHS[index - 1] : null;
   };
 
-  // Calculates record for the selected month, automatically pulling arrears from previous month
+  // Calculates record for the selected month including carried-over arrears
   const getMonthRecord = (unit, month) => {
     const existingRecord = unit.history.find((h) => h.month === month);
     if (existingRecord) return existingRecord;
 
-    // Check previous month for defaulted balances
     const prevMonthStr = getPreviousMonthIndex(month);
     let previousArrears = 0;
 
@@ -82,7 +106,6 @@ export default function App() {
       }
     }
 
-    // Default target rent is the base default rent + defaulted arrears from previous month
     const calculatedTarget = Number(defaultRent) + previousArrears;
 
     return {
@@ -163,27 +186,63 @@ export default function App() {
     }
   };
 
+  // Add a new overall expense
+  const handleAddGlobalExpense = async (e) => {
+    e.preventDefault();
+    if (!expAmount) return;
+
+    const newExpense = {
+      id: Date.now(),
+      category: expCategory,
+      amount: Number(expAmount),
+      date: expDate,
+      month: selectedMonth,
+      notes: expNotes
+    };
+
+    const updatedExpenses = [...globalExpenses, newExpense];
+    await saveExpensesToCloud(updatedExpenses);
+
+    setExpAmount('');
+    setExpNotes('');
+  };
+
+  const handleDeleteExpense = async (id) => {
+    const updatedExpenses = globalExpenses.filter((e) => e.id !== id);
+    await saveExpensesToCloud(updatedExpenses);
+  };
+
+  // Financial Calculations for selected month
   const totalExpected = units.reduce((acc, u) => acc + getMonthRecord(u, selectedMonth).monthlyRent, 0);
-  const totalCollected = units.reduce((acc, u) => acc + getMonthRecord(u, selectedMonth).amountPaid, 0);
-  const totalBalance = totalExpected - totalCollected;
+  const totalIncome = units.reduce((acc, u) => acc + getMonthRecord(u, selectedMonth).amountPaid, 0);
+  const totalBalance = totalExpected - totalIncome;
+
+  // Filter and sum overall expenses for selected month
+  const currentMonthExpenses = globalExpenses.filter((e) => e.month === selectedMonth);
+  const totalGlobalExpenses = currentMonthExpenses.reduce((sum, exp) => sum + Number(exp.amount || 0), 0);
+
+  // Net Profit after general expenses
+  const netOverallProfit = totalIncome - totalGlobalExpenses;
 
   return (
-    <div className="app-container">
+    <div className="container app-container">
       <div className={receiptUnit ? "no-print" : ""}>
-
-        {/* Header Bar */}
-        <header className="app-header">
+        
+        {/* Header & Control Bar */}
+        <header className="app-header no-print" style={{ marginBottom: '1.5rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '1rem' }}>
           <div>
-            <h1 className="header-title">Rental Income Ledger</h1>
-            <p className="header-subtitle">Managing {units.length} Properties | Auto-Carryover Defaultors</p>
+            <h1 className="header-title" style={{ margin: 0 }}>Rental Ledger</h1>
+            <p className="header-subtitle" style={{ margin: 0, color: '#64748b' }}>
+              Managing {units.length} Properties
+            </p>
           </div>
 
-          <div className="toolbar no-print">
+          <div className="toolbar" style={{ display: 'flex', gap: '1rem', alignItems: 'center', flexWrap: 'wrap' }}>
             <div className="period-picker">
-              <label>Period:</label>
+              <label style={{ marginRight: '0.5rem' }}>Period:</label>
               <select value={selectedMonth} onChange={(e) => setSelectedMonth(e.target.value)}>
                 {ALL_MONTHS.map((m) => (
-                  <option key={m} value={m} style={{ background: '#151c2c', color: '#ffffff' }}>
+                  <option key={m} value={m}>
                     {m}
                   </option>
                 ))}
@@ -191,12 +250,13 @@ export default function App() {
             </div>
 
             <div className="default-rent-picker">
-              <label>Default Rent:</label>
+              <label style={{ marginRight: '0.5rem' }}>Default Rent:</label>
               <input
                 type="number"
                 value={defaultRent}
                 onChange={(e) => setDefaultRent(e.target.value)}
                 placeholder="0"
+                style={{ width: '100px' }}
               />
             </div>
 
@@ -205,25 +265,100 @@ export default function App() {
           </div>
         </header>
 
-        {/* Financial Cards */}
-        <div className="summary-grid">
-          <div className="summary-card">
-            <span className="summary-label">Target ({selectedMonth})</span>
+        {/* Top Dashboard Summary Cards */}
+        <div className="dashboard-cards summary-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '1rem', marginBottom: '2rem' }}>
+          <div className="card summary-card">
+            <h3>Target Rent ({selectedMonth})</h3>
             <p className="summary-value">KES {totalExpected.toLocaleString()}</p>
           </div>
-          <div className="summary-card">
-            <span className="summary-label">Total Collected</span>
-            <p className="summary-value text-emerald">KES {totalCollected.toLocaleString()}</p>
+          <div className="card summary-card">
+            <h3>Total Collected Rent</h3>
+            <p className="summary-value text-emerald">KES {totalIncome.toLocaleString()}</p>
           </div>
-          <div className="summary-card">
-            <span className="summary-label">Outstanding Balance</span>
+          <div className="card summary-card">
+            <h3>Outstanding Balance</h3>
             <p className="summary-value text-red">KES {totalBalance.toLocaleString()}</p>
+          </div>
+          <div className="card summary-card">
+            <h3>Overall Expenses</h3>
+            <p className="summary-value text-red">KES {totalGlobalExpenses.toLocaleString()}</p>
+          </div>
+          <div className="card summary-card">
+            <h3>Net Profit</h3>
+            <p className="summary-value text-emerald">KES {netOverallProfit.toLocaleString()}</p>
           </div>
         </div>
 
-        {/* Table View */}
-        <div className="table-card">
-          <table className="ledger-table">
+        {/* Button / Form to log global expenses */}
+        <section className="overall-expenses-section table-card" style={{ marginBottom: '2rem' }}>
+          <h2>General / Property Expenses ({selectedMonth})</h2>
+          
+          <form onSubmit={handleAddGlobalExpense} className="no-print" style={{ display: 'flex', gap: '0.5rem', margin: '1rem 0', flexWrap: 'wrap' }}>
+            <select value={expCategory} onChange={(e) => setExpCategory(e.target.value)}>
+              <option value="Electricity">Electricity</option>
+              <option value="Water">Water</option>
+              <option value="Maintenance">Maintenance & Repairs</option>
+              <option value="Caretaker">Caretaker / Security</option>
+              <option value="Rates">Land Rates / Taxes</option>
+              <option value="Other">Other</option>
+            </select>
+            <input 
+              type="number" 
+              placeholder="Amount (KES)" 
+              value={expAmount} 
+              onChange={(e) => setExpAmount(e.target.value)} 
+              required 
+            />
+            <input 
+              type="date" 
+              value={expDate} 
+              onChange={(e) => setExpDate(e.target.value)} 
+            />
+            <input 
+              type="text" 
+              placeholder="Notes / Description" 
+              value={expNotes} 
+              onChange={(e) => setExpNotes(e.target.value)} 
+            />
+            <button type="submit" className="btn btn-add">+ Add Expense</button>
+          </form>
+
+          <table className="ledger-table" style={{ width: '100%', textAlign: 'left' }}>
+            <thead>
+              <tr>
+                <th>Date</th>
+                <th>Category</th>
+                <th>Notes</th>
+                <th>Amount</th>
+                <th className="no-print" style={{ textAlign: 'center' }}>Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {currentMonthExpenses.length === 0 ? (
+                <tr>
+                  <td colSpan="5" style={{ textAlign: 'center', color: '#94a3b8' }}>No expenses recorded for this month.</td>
+                </tr>
+              ) : (
+                currentMonthExpenses.map((exp) => (
+                  <tr key={exp.id}>
+                    <td>{exp.date}</td>
+                    <td>{exp.category}</td>
+                    <td>{exp.notes || '—'}</td>
+                    <td className="text-red" style={{ fontWeight: 600 }}>KES {exp.amount.toLocaleString()}</td>
+                    <td className="no-print" style={{ textAlign: 'center' }}>
+                      <button onClick={() => handleDeleteExpense(exp.id)} className="btn btn-delete">Delete</button>
+                    </td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </section>
+
+        {/* Rental Units Table */}
+        <section className="rental-units-section table-card">
+          <h2>Rental Units Status</h2>
+          <table className="ledger-table" style={{ width: '100%', textAlign: 'left', marginTop: '1rem' }}>
             <thead>
               <tr>
                 <th>House No</th>
@@ -247,7 +382,7 @@ export default function App() {
                     <td>
                       KES {record.monthlyRent.toLocaleString()}
                       {record.arrearsCarriedOver > 0 && (
-                        <span style={{ display: 'block', fontSize: '0.7rem', color: 'var(--accent-red)' }}>
+                        <span style={{ display: 'block', fontSize: '0.7rem', color: 'var(--accent-red, #ef4444)' }}>
                           (+KES {record.arrearsCarriedOver.toLocaleString()} default from prev month)
                         </span>
                       )}
@@ -269,7 +404,8 @@ export default function App() {
               })}
             </tbody>
           </table>
-        </div>
+        </section>
+
       </div>
 
       {/* Edit Form Modal */}
@@ -357,7 +493,7 @@ export default function App() {
                 <span>Tenant Name:</span>
                 <strong>{receiptUnit.unit.tenantName}</strong>
               </div>
-              <div className="receipt-row receipt-row border-top">
+              <div className="receipt-row border-top">
                 <span>Total Target Due:</span>
                 <span>KES {receiptUnit.record.monthlyRent.toLocaleString()}</span>
               </div>
@@ -365,7 +501,7 @@ export default function App() {
                 <span>Amount Paid:</span>
                 <strong style={{ color: '#047857' }}>KES {receiptUnit.record.amountPaid.toLocaleString()}</strong>
               </div>
-              <div className="receipt-row receipt-row border-top" style={{ fontSize: '1rem', fontWeight: 800 }}>
+              <div className="receipt-row border-top" style={{ fontSize: '1rem', fontWeight: 800 }}>
                 <span>Remaining Balance:</span>
                 <span style={{ color: receiptUnit.record.balance > 0 ? '#dc2626' : '#000000' }}>
                   KES {receiptUnit.record.balance.toLocaleString()}
