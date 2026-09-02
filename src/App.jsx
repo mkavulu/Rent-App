@@ -1,4 +1,6 @@
 import React, { useState, useEffect } from 'react';
+import { db } from './firebase';
+import { doc, onSnapshot, setDoc } from 'firebase/firestore';
 
 // Generates all months from January 2010 to December 2050
 const generateMonthOptions = () => {
@@ -21,18 +23,7 @@ const CURRENT_MONTH = 'August 2026';
 
 export default function App() {
   const [defaultRent, setDefaultRent] = useState(0);
-
-  const [units, setUnits] = useState(() => {
-    const saved = localStorage.getItem('rental_units_history_v9');
-    if (saved) return JSON.parse(saved);
-
-    return Array.from({ length: 11 }, (_, i) => ({
-      id: i + 1,
-      houseNo: `House ${i + 1}`,
-      tenantName: `Tenant ${i + 1}`,
-      history: []
-    }));
-  });
+  const [units, setUnits] = useState([]);
 
   const [selectedMonth, setSelectedMonth] = useState(CURRENT_MONTH);
   const [editingUnit, setEditingUnit] = useState(null);
@@ -42,9 +33,32 @@ export default function App() {
   const [payAmount, setPayAmount] = useState(0);
   const [payDate, setPayDate] = useState('');
 
+  // 1. Listen for LIVE updates from Firebase Firestore
   useEffect(() => {
-    localStorage.setItem('rental_units_history_v9', JSON.stringify(units));
-  }, [units]);
+    const docRef = doc(db, 'rental_data', 'current_ledger');
+    const unsubscribe = onSnapshot(docRef, (docSnap) => {
+      if (docSnap.exists()) {
+        setUnits(docSnap.data().units || []);
+      } else {
+        // Initialize default units in Firestore if document doesn't exist yet
+        const defaultUnits = Array.from({ length: 11 }, (_, i) => ({
+          id: i + 1,
+          houseNo: `House ${i + 1}`,
+          tenantName: `Tenant ${i + 1}`,
+          history: []
+        }));
+        saveUnitsToCloud(defaultUnits);
+      }
+    });
+
+    return () => unsubscribe(); // Cleanup listener on unmount
+  }, []);
+
+  // 2. Helper to save updates directly to Firebase Firestore
+  const saveUnitsToCloud = async (newUnits) => {
+    setUnits(newUnits);
+    await setDoc(doc(db, 'rental_data', 'current_ledger'), { units: newUnits });
+  };
 
   // Gets the index of the month prior to the current selection
   const getPreviousMonthIndex = (currentMonthStr) => {
@@ -54,7 +68,7 @@ export default function App() {
 
   // Calculates record for the selected month, automatically pulling arrears from previous month
   const getMonthRecord = (unit, month) => {
-    const existingRecord = unit.history.find(h => h.month === month);
+    const existingRecord = unit.history.find((h) => h.month === month);
     if (existingRecord) return existingRecord;
 
     // Check previous month for defaulted balances
@@ -62,7 +76,7 @@ export default function App() {
     let previousArrears = 0;
 
     if (prevMonthStr) {
-      const prevRecord = unit.history.find(h => h.month === prevMonthStr);
+      const prevRecord = unit.history.find((h) => h.month === prevMonthStr);
       if (prevRecord && prevRecord.balance > 0) {
         previousArrears = prevRecord.balance;
       }
@@ -89,16 +103,16 @@ export default function App() {
     setPayDate(currentRecord.datePaid || new Date().toISOString().split('T')[0]);
   };
 
-  const handleSavePayment = (e) => {
+  const handleSavePayment = async (e) => {
     e.preventDefault();
     const paid = Number(payAmount);
     const rentTarget = Number(monthlyRentInput);
 
-    setUnits(units.map(u => {
+    const updatedUnits = units.map((u) => {
       if (u.id !== editingUnit.id) return u;
 
       const newHistory = [...u.history];
-      const existingIndex = newHistory.findIndex(h => h.month === selectedMonth);
+      const existingIndex = newHistory.findIndex((h) => h.month === selectedMonth);
 
       const newRecord = {
         month: selectedMonth,
@@ -120,12 +134,13 @@ export default function App() {
         tenantName: editingUnit.tenantName,
         history: newHistory
       };
-    }));
+    });
 
+    await saveUnitsToCloud(updatedUnits);
     setEditingUnit(null);
   };
 
-  const handleAddHouse = () => {
+  const handleAddHouse = async () => {
     const newCount = units.length + 1;
     const rentVal = Number(defaultRent) || 0;
 
@@ -137,12 +152,14 @@ export default function App() {
         { month: selectedMonth, monthlyRent: rentVal, amountPaid: 0, datePaid: '', balance: rentVal }
       ]
     };
-    setUnits([...units, newUnit]);
+
+    await saveUnitsToCloud([...units, newUnit]);
   };
 
-  const handleDeleteHouse = (id) => {
+  const handleDeleteHouse = async (id) => {
     if (window.confirm("Are you sure you want to delete this house?")) {
-      setUnits(units.filter(u => u.id !== id));
+      const updatedUnits = units.filter((u) => u.id !== id);
+      await saveUnitsToCloud(updatedUnits);
     }
   };
 
