@@ -4,8 +4,8 @@ import { doc, onSnapshot, setDoc, getDoc } from 'firebase/firestore';
 import { onAuthStateChanged, signOut } from 'firebase/auth';
 import Auth from './Auth';
 import AdminPanel from './AdminPanel';
+import TenantDashboard from './TenantDashboard';
 
-// Generates all months from January 2010 to December 2050
 const generateMonthOptions = () => {
   const months = [
     'January', 'February', 'March', 'April', 'May', 'June',
@@ -121,13 +121,11 @@ export default function App() {
     await setDoc(doc(db, 'rental_data', 'global_expenses'), { expenses: newExpenses });
   };
 
-  // Helper for previous month lookup
   const getPreviousMonthIndex = (currentMonthStr) => {
     const index = ALL_MONTHS.indexOf(currentMonthStr);
     return index > 0 ? ALL_MONTHS[index - 1] : null;
   };
 
-  // Calculates record for the selected month including carried-over arrears
   const getMonthRecord = (unit, month) => {
     const existingRecord = unit.history.find((h) => h.month === month);
     if (existingRecord) return existingRecord;
@@ -257,19 +255,17 @@ export default function App() {
 
   const netOverallProfit = totalIncome - totalGlobalExpenses;
 
-  // Render Loading State
   if (loadingAuth) {
     return <div style={{ padding: '2rem', textAlign: 'center' }}>Loading application...</div>;
   }
 
-  // Render Auth screen if not logged in
   if (!currentUser) {
     return <Auth />;
   }
 
   return (
     <div className="container app-container">
-      {/* Top User Session Navigation */}
+      {/* Top Navigation */}
       <div className="no-print" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '0.75rem 0', borderBottom: '1px solid #e2e8f0', marginBottom: '1rem' }}>
         <div>
           <span>Logged in as: <strong>{currentUser.email}</strong> ({userRole})</span>
@@ -288,11 +284,14 @@ export default function App() {
         </div>
       </div>
 
+      {/* MAIN VIEW ROUTING */}
       {viewAdminTab && userRole === 'admin' ? (
         <AdminPanel />
+      ) : userRole === 'tenant' ? (
+        <TenantDashboard user={{ email: currentUser.email, role: userRole }} />
       ) : (
         <div className={receiptUnit ? "no-print" : ""}>
-          {/* Header & Control Bar */}
+          {/* Header Bar */}
           <header className="app-header no-print" style={{ marginBottom: '1.5rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '1rem' }}>
             <div>
               <h1 className="header-title" style={{ margin: 0 }}>Rental Ledger</h1>
@@ -313,22 +312,18 @@ export default function App() {
                 </select>
               </div>
 
-              {userRole === 'admin' && (
-                <div className="default-rent-picker">
-                  <label style={{ marginRight: '0.5rem' }}>Default Rent:</label>
-                  <input
-                    type="number"
-                    value={defaultRent}
-                    onChange={(e) => setDefaultRent(e.target.value)}
-                    placeholder="0"
-                    style={{ width: '100px' }}
-                  />
-                </div>
-              )}
+              <div className="default-rent-picker">
+                <label style={{ marginRight: '0.5rem' }}>Default Rent:</label>
+                <input
+                  type="number"
+                  value={defaultRent}
+                  onChange={(e) => setDefaultRent(e.target.value)}
+                  placeholder="0"
+                  style={{ width: '100px' }}
+                />
+              </div>
 
-              {userRole === 'admin' && (
-                <button onClick={handleAddHouse} className="btn btn-add">+ Add House</button>
-              )}
+              <button onClick={handleAddHouse} className="btn btn-add">+ Add House</button>
               <button onClick={() => window.print()} className="btn btn-print">Print Statement</button>
             </div>
           </header>
@@ -357,41 +352,39 @@ export default function App() {
             </div>
           </div>
 
-          {/* Log Global Expenses Section */}
+          {/* Expenses Section */}
           <section className="overall-expenses-section table-card" style={{ marginBottom: '2rem' }}>
             <h2>General / Property Expenses ({selectedMonth})</h2>
             
-            {userRole === 'admin' && (
-              <form onSubmit={handleAddGlobalExpense} className="no-print" style={{ display: 'flex', gap: '0.5rem', margin: '1rem 0', flexWrap: 'wrap' }}>
-                <select value={expCategory} onChange={(e) => setExpCategory(e.target.value)}>
-                  <option value="Electricity">Electricity</option>
-                  <option value="Water">Water</option>
-                  <option value="Maintenance">Maintenance & Repairs</option>
-                  <option value="Caretaker">Caretaker / Security</option>
-                  <option value="Rates">Land Rates / Taxes</option>
-                  <option value="Other">Other</option>
-                </select>
-                <input 
-                  type="number" 
-                  placeholder="Amount (KES)" 
-                  value={expAmount} 
-                  onChange={(e) => setExpAmount(e.target.value)} 
-                  required 
-                />
-                <input 
-                  type="date" 
-                  value={expDate} 
-                  onChange={(e) => setExpDate(e.target.value)} 
-                />
-                <input 
-                  type="text" 
-                  placeholder="Notes / Description" 
-                  value={expNotes} 
-                  onChange={(e) => setExpNotes(e.target.value)} 
-                />
-                <button type="submit" className="btn btn-add">+ Add Expense</button>
-              </form>
-            )}
+            <form onSubmit={handleAddGlobalExpense} className="no-print" style={{ display: 'flex', gap: '0.5rem', margin: '1rem 0', flexWrap: 'wrap' }}>
+              <select value={expCategory} onChange={(e) => setExpCategory(e.target.value)}>
+                <option value="Electricity">Electricity</option>
+                <option value="Water">Water</option>
+                <option value="Maintenance">Maintenance & Repairs</option>
+                <option value="Caretaker">Caretaker / Security</option>
+                <option value="Rates">Land Rates / Taxes</option>
+                <option value="Other">Other</option>
+              </select>
+              <input 
+                type="number" 
+                placeholder="Amount (KES)" 
+                value={expAmount} 
+                onChange={(e) => setExpAmount(e.target.value)} 
+                required 
+              />
+              <input 
+                type="date" 
+                value={expDate} 
+                onChange={(e) => setExpDate(e.target.value)} 
+              />
+              <input 
+                type="text" 
+                placeholder="Notes / Description" 
+                value={expNotes} 
+                onChange={(e) => setExpNotes(e.target.value)} 
+              />
+              <button type="submit" className="btn btn-add">+ Add Expense</button>
+            </form>
 
             <table className="ledger-table" style={{ width: '100%', textAlign: 'left' }}>
               <thead>
@@ -400,13 +393,13 @@ export default function App() {
                   <th>Category</th>
                   <th>Notes</th>
                   <th>Amount</th>
-                  {userRole === 'admin' && <th className="no-print" style={{ textAlign: 'center' }}>Actions</th>}
+                  <th className="no-print" style={{ textAlign: 'center' }}>Actions</th>
                 </tr>
               </thead>
               <tbody>
                 {currentMonthExpenses.length === 0 ? (
                   <tr>
-                    <td colSpan={userRole === 'admin' ? "5" : "4"} style={{ textAlign: 'center', color: '#94a3b8' }}>
+                    <td colSpan="5" style={{ textAlign: 'center', color: '#94a3b8' }}>
                       No expenses recorded for this month.
                     </td>
                   </tr>
@@ -417,11 +410,9 @@ export default function App() {
                       <td>{exp.category}</td>
                       <td>{exp.notes || '—'}</td>
                       <td className="text-red" style={{ fontWeight: 600 }}>KES {exp.amount.toLocaleString()}</td>
-                      {userRole === 'admin' && (
-                        <td className="no-print" style={{ textAlign: 'center' }}>
-                          <button onClick={() => handleDeleteExpense(exp.id)} className="btn btn-delete">Delete</button>
-                        </td>
-                      )}
+                      <td className="no-print" style={{ textAlign: 'center' }}>
+                        <button onClick={() => handleDeleteExpense(exp.id)} className="btn btn-delete">Delete</button>
+                      </td>
                     </tr>
                   ))
                 )}
@@ -468,13 +459,9 @@ export default function App() {
                       <td style={{ color: '#94a3b8' }}>{record.datePaid || '—'}</td>
                       <td className="no-print" style={{ textAlign: 'center' }}>
                         <div style={{ display: 'flex', gap: '0.5rem', justifyContent: 'center' }}>
-                          {userRole === 'admin' && (
-                            <button onClick={() => handleOpenEdit(unit)} className="btn btn-action">Record</button>
-                          )}
+                          <button onClick={() => handleOpenEdit(unit)} className="btn btn-action">Record</button>
                           <button onClick={() => setReceiptUnit({ unit, record })} className="btn btn-receipt">Receipt</button>
-                          {userRole === 'admin' && (
-                            <button onClick={() => handleDeleteHouse(unit.id)} className="btn btn-delete">Delete</button>
-                          )}
+                          <button onClick={() => handleDeleteHouse(unit.id)} className="btn btn-delete">Delete</button>
                         </div>
                       </td>
                     </tr>
@@ -486,7 +473,7 @@ export default function App() {
         </div>
       )}
 
-      {/* Edit Form Modal */}
+      {/* Edit Modal (Admin Only) */}
       {editingUnit && userRole === 'admin' && (
         <div className="modal-overlay no-print">
           <div className="modal-card">
@@ -548,7 +535,7 @@ export default function App() {
         </div>
       )}
 
-      {/* Printable Receipt Modal */}
+      {/* Receipt Modal */}
       {receiptUnit && (
         <div className="modal-overlay">
           <div className="receipt-box">
