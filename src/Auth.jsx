@@ -10,9 +10,14 @@ export default function Auth() {
   const [isRegistering, setIsRegistering] = useState(false);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [role, setRole] = useState('tenant');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+
+  // List of authorized admin emails that can bypass the default tenant role
+  const ADMIN_EMAILS = [
+    'mutukukavulu2000@gmail.com',
+    'dmiltechenterprises@gmail.com'
+  ];
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -21,27 +26,34 @@ export default function Auth() {
 
     try {
       if (isRegistering) {
+        // 1. Create account in Firebase Auth
         const userCredential = await createUserWithEmailAndPassword(auth, email, password);
         const user = userCredential.user;
 
+        // 2. Automatically assign 'admin' if email matches allowed list, otherwise force 'tenant'
+        const lowerEmail = user.email.toLowerCase();
+        const assignedRole = ADMIN_EMAILS.includes(lowerEmail) ? 'admin' : 'tenant';
+
+        // 3. Store user role profile in Firestore
         await setDoc(doc(db, 'users', user.uid), {
           uid: user.uid,
-          email: user.email,
-          role: role,
+          email: lowerEmail,
+          role: assignedRole,
           createdAt: new Date().toISOString()
         });
       } else {
+        // Sign in existing user
         await signInWithEmailAndPassword(auth, email, password);
       }
     } catch (err) {
-      // Friendly error formatting
+      // User-friendly error message formatting
       let msg = err.message;
       if (msg.includes('auth/invalid-credential') || msg.includes('auth/wrong-password')) {
         msg = 'Invalid email or password.';
       } else if (msg.includes('auth/email-already-in-use')) {
-        msg = 'An account with this email already exists.';
+        msg = 'An account with this email address already exists.';
       } else if (msg.includes('auth/operation-not-allowed')) {
-        msg = 'Email/Password sign-in is disabled in Firebase Console.';
+        msg = 'Email/Password sign-in is disabled in your Firebase Console.';
       }
       setError(msg);
     } finally {
@@ -56,7 +68,7 @@ export default function Auth() {
           <div style={styles.logoBadge}>🏢</div>
           <h2 style={styles.title}>{isRegistering ? 'Create Account' : 'Welcome Back'}</h2>
           <p style={styles.subtitle}>
-            {isRegistering ? 'Sign up to access the rental portal' : 'Log in to access your portal'}
+            {isRegistering ? 'Sign up to access the rental portal' : 'Log in to access your account'}
           </p>
         </div>
 
@@ -90,20 +102,6 @@ export default function Auth() {
               style={styles.input}
             />
           </div>
-
-          {isRegistering && (
-            <div style={styles.fieldGroup}>
-              <label style={styles.label}>Account Role</label>
-              <select 
-                value={role} 
-                onChange={(e) => setRole(e.target.value)}
-                style={styles.select}
-              >
-                <option value="tenant" style={styles.option}>Tenant</option>
-                <option value="admin" style={styles.option}>Admin</option>
-              </select>
-            </div>
-          )}
 
           <button type="submit" disabled={loading} style={styles.submitBtn}>
             {loading ? 'Processing...' : isRegistering ? 'Sign Up' : 'Sign In'}
@@ -203,20 +201,6 @@ const styles = {
     fontSize: '0.95rem',
     outline: 'none',
     transition: 'border-color 0.2s',
-  },
-  select: {
-    backgroundColor: '#0f172a',
-    border: '1px solid #334155',
-    borderRadius: '8px',
-    padding: '0.75rem 1rem',
-    color: '#ffffff',
-    fontSize: '0.95rem',
-    outline: 'none',
-    cursor: 'pointer',
-  },
-  option: {
-    backgroundColor: '#161e2e',
-    color: '#ffffff',
   },
   submitBtn: {
     backgroundColor: '#d97706',
