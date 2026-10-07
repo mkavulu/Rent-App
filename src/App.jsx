@@ -6,6 +6,8 @@ import Auth from './Auth';
 import AdminPanel from './AdminPanel';
 import TenantDashboard from './TenantDashboard';
 
+const ADMIN_EMAILS = ["mutukukavulu2000@gmail.com", "dmiltechenterprises@gmail.com"];
+
 const generateMonthOptions = () => {
   const months = [
     'January', 'February', 'March', 'April', 'May', 'June',
@@ -55,16 +57,24 @@ export default function App() {
     const unsubscribeAuth = onAuthStateChanged(auth, async (user) => {
       if (user) {
         setCurrentUser(user);
+        const userEmail = (user.email || '').toLowerCase();
+        
         try {
           const userDoc = await getDoc(doc(db, 'users', user.uid));
-          if (userDoc.exists()) {
-            setUserRole(userDoc.data().role);
+          if (userDoc.exists() && userDoc.data().role) {
+            setUserRole(userDoc.data().role.toLowerCase());
+          } else if (ADMIN_EMAILS.includes(userEmail)) {
+            setUserRole('admin');
           } else {
             setUserRole('tenant');
           }
         } catch (err) {
           console.error("Error fetching user role:", err);
-          setUserRole('tenant');
+          if (ADMIN_EMAILS.includes(userEmail)) {
+            setUserRole('admin');
+          } else {
+            setUserRole('tenant');
+          }
         }
       } else {
         setCurrentUser(null);
@@ -473,8 +483,8 @@ export default function App() {
         </div>
       )}
 
-      {/* Edit Modal (Admin Only) */}
-      {editingUnit && userRole === 'admin' && (
+      {/* Edit Modal */}
+      {editingUnit && (
         <div className="modal-overlay no-print">
           <div className="modal-card">
             <h2 style={{ fontSize: '1.25rem', fontWeight: 800, marginBottom: '0.25rem' }}>Update Entry: {editingUnit.houseNo}</h2>
