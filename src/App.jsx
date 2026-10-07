@@ -86,7 +86,7 @@ export default function App() {
     return () => unsubscribeAuth();
   }, []);
 
-  // 2. Listen for LIVE updates from Firebase Firestore for units and expenses
+  // 2. Safe Live updates listener for Firestore
   useEffect(() => {
     if (!currentUser) return;
 
@@ -95,14 +95,10 @@ export default function App() {
       if (docSnap.exists()) {
         setUnits(docSnap.data().units || []);
       } else {
-        const defaultUnits = Array.from({ length: 11 }, (_, i) => ({
-          id: i + 1,
-          houseNo: `House ${i + 1}`,
-          tenantName: `Tenant ${i + 1}`,
-          history: []
-        }));
-        saveUnitsToCloud(defaultUnits);
+        setUnits([]);
       }
+    }, (error) => {
+      console.error("Error loading units:", error);
     });
 
     const expensesRef = doc(db, 'rental_data', 'global_expenses');
@@ -110,8 +106,10 @@ export default function App() {
       if (docSnap.exists()) {
         setGlobalExpenses(docSnap.data().expenses || []);
       } else {
-        saveExpensesToCloud([]);
+        setGlobalExpenses([]);
       }
+    }, (error) => {
+      console.error("Error loading expenses:", error);
     });
 
     return () => {
@@ -120,15 +118,15 @@ export default function App() {
     };
   }, [currentUser]);
 
-  // Helpers to save updates to Firestore
+  // Helpers to save updates safely to Firestore
   const saveUnitsToCloud = async (newUnits) => {
     setUnits(newUnits);
-    await setDoc(doc(db, 'rental_data', 'current_ledger'), { units: newUnits });
+    await setDoc(doc(db, 'rental_data', 'current_ledger'), { units: newUnits }, { merge: true });
   };
 
   const saveExpensesToCloud = async (newExpenses) => {
     setGlobalExpenses(newExpenses);
-    await setDoc(doc(db, 'rental_data', 'global_expenses'), { expenses: newExpenses });
+    await setDoc(doc(db, 'rental_data', 'global_expenses'), { expenses: newExpenses }, { merge: true });
   };
 
   const getPreviousMonthIndex = (currentMonthStr) => {
